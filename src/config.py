@@ -15,3 +15,5 @@ DEFAULT_TOP_K = 5
 
 DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 DEFAULT_PROMPT_TEMPLATE = "citation"
+DEFAULT_LLM_PROVIDER = "openai"
+DEFAULT_LLM_MODEL = "gpt-4o-mini"
