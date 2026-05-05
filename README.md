@@ -37,10 +37,11 @@ requirements.txt      Python dependencies
 
 ## Setup
 
-Use the existing conda environment named `dsc291`.
+Create a conda environment named `rag_env`.
 
 ```bash
-conda activate dsc291
+conda create --name rag_env
+conda activate rag_env
 pip install -r requirements.txt
 ```
 
@@ -57,7 +58,6 @@ The default embedding provider is local `sentence-transformers/all-MiniLM-L6-v2`
 Put source documents under `data/`, then build a FAISS index:
 
 ```bash
-conda activate dsc291
 python src/main.py --index --data-dir data --index-dir index_store
 ```
 
