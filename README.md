@@ -1,6 +1,6 @@
 # RAGflow
 
-Production-quality Retrieval-Augmented Generation (RAG) project for technical documents. It ingests PDFs, Markdown files, and Jupyter notebooks; chunks text with citation metadata; embeds chunks; stores vectors in FAISS; retrieves relevant context; and generates cited answers with a configurable LLM.
+Retrieval-Augmented Generation (RAG) for technical documents. It ingests PDFs, Markdown files, and Jupyter notebooks; chunks text with citation metadata; embeds chunks; stores vectors in FAISS; retrieves relevant context; and generates cited answers with a configurable LLM.
 
 ## Architecture
 
@@ -26,7 +26,7 @@ notebooks/            Experiments and evaluation notebooks
 src/
   ingestion.py        PDF, Markdown, and notebook loading
   chunking.py         Fixed token chunking with overlap
-  embeddings.py       Hugging Face and OpenAI embedding wrappers
+  embeddings.py       Local and API-compatible embedding wrappers
   vector_store.py     FAISS indexing, persistence, and retrieval
   prompts.py          Basic QA and citation-focused prompt templates
   rag_pipeline.py     End-to-end retrieval and generation pipeline
@@ -37,7 +37,7 @@ requirements.txt      Python dependencies
 
 ## Setup
 
-Create a conda environment named `rag_env`.
+Use the existing conda environment named `rag_env`.
 
 ```bash
 conda create --name rag_env
@@ -45,13 +45,13 @@ conda activate rag_env
 pip install -r requirements.txt
 ```
 
-For OpenAI embeddings or generation, set:
+For API-backed embeddings or generation, set the relevant API key if your endpoint requires one:
 
 ```bash
-export OPENAI_API_KEY="your-api-key"
+export MODEL_API_KEY="your-api-key"
 ```
 
-The default embedding provider is local `sentence-transformers/all-MiniLM-L6-v2`. The default LLM provider is OpenAI. For local generation, pass `--llm-provider local --llm-model <huggingface-model>`.
+The default embedding provider is local `sentence-transformers/all-MiniLM-L6-v2`. Generation is provider-neutral: use `--generation-provider api` for chat-completions-compatible APIs, or `--generation-provider local` for Hugging Face text-generation models.
 
 ## Usage
 
@@ -76,13 +76,42 @@ python src/main.py \
   --query "What are the main components of the pipeline?"
 ```
 
-Use OpenAI embeddings:
+Use API-compatible embeddings:
 
 ```bash
 python src/main.py \
   --index \
-  --embedding-provider openai \
+  --embedding-provider api \
   --embedding-model text-embedding-3-small
+```
+
+Use an API-compatible hosted chat endpoint:
+
+```bash
+python src/main.py \
+  --query "Where is FAISS used?" \
+  --generation-provider api \
+  --generation-model gpt-4o-mini \
+  --generation-api-key-env MODEL_API_KEY
+```
+
+Use a local API-compatible endpoint such as Ollama, LM Studio, or vLLM:
+
+```bash
+python src/main.py \
+  --query "Where is FAISS used?" \
+  --generation-provider api \
+  --generation-model llama3.1 \
+  --generation-base-url http://localhost:11434/v1
+```
+
+Use a local Hugging Face generation model:
+
+```bash
+python src/main.py \
+  --query "Where is FAISS used?" \
+  --generation-provider local \
+  --generation-model google/flan-t5-base
 ```
 
 Use the citation-focused prompt, which is the default:
