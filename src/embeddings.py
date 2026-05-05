@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import os
 from abc import ABC, abstractmethod
 from typing import Iterable
 
 import numpy as np
 
-from config import DEFAULT_EMBEDDING_MODEL
+from config import DEFAULT_EMBEDDING_MODEL, DEFAULT_EMBEDDING_PROVIDER
 
 
 class EmbeddingModel(ABC):
@@ -51,17 +52,29 @@ class SentenceTransformerEmbeddings(EmbeddingModel):
         return normalize_vectors(embeddings)
 
 
-class OpenAIEmbeddings(EmbeddingModel):
-    """OpenAI embedding provider."""
+class APIEmbeddingModel(EmbeddingModel):
+    """Embedding provider for API-compatible embedding endpoints."""
 
-    def __init__(self, model_name: str = "text-embedding-3-small") -> None:
+    def __init__(
+        self,
+        model_name: str,
+        base_url: str | None = None,
+        api_key: str | None = None,
+        api_key_env: str = "MODEL_API_KEY",
+    ) -> None:
         try:
             from openai import OpenAI
         except ImportError as exc:
-            raise ImportError("Install openai to use OpenAI embeddings.") from exc
+            raise ImportError("Install openai to use API-compatible embeddings.") from exc
 
+        if not model_name:
+            raise ValueError("model_name is required for API-compatible embeddings.")
+
+        resolved_api_key = _resolve_api_key(api_key=api_key, api_key_env=api_key_env)
         self.model_name = model_name
-        self._client = OpenAI()
+        self.base_url = base_url
+        self.api_key_env = api_key_env
+        self._client = OpenAI(api_key=resolved_api_key, base_url=base_url)
 
     def embed_texts(self, texts: list[str]) -> np.ndarray:
         if not texts:
@@ -73,17 +86,27 @@ class OpenAIEmbeddings(EmbeddingModel):
 
 
 def build_embedding_model(
-    provider: str = "sentence-transformers",
+    provider: str = DEFAULT_EMBEDDING_PROVIDER,
     model_name: str | None = None,
     device: str | None = None,
+    base_url: str | None = None,
+    api_key: str | None = None,
+    api_key_env: str = "MODEL_API_KEY",
 ) -> EmbeddingModel:
     """Create an embedding provider from CLI/config values."""
 
     provider_key = provider.strip().lower()
     if provider_key in {"sentence-transformers", "sentence_transformers", "huggingface", "hf", "local"}:
         return SentenceTransformerEmbeddings(model_name or DEFAULT_EMBEDDING_MODEL, device=device)
-    if provider_key == "openai":
-        return OpenAIEmbeddings(model_name or "text-embedding-3-small")
+    if provider_key in {"api", "api-compatible", "api_compatible", "openai-compatible", "openai_compatible", "openai"}:
+        if not model_name:
+            raise ValueError("An --embedding-model is required for API-compatible embeddings.")
+        return APIEmbeddingModel(
+            model_name=model_name,
+            base_url=base_url,
+            api_key=api_key,
+            api_key_env=api_key_env,
+        )
 
     raise ValueError(f"Unsupported embedding provider: {provider}")
 
@@ -103,3 +126,7 @@ def normalize_vectors(vectors: Iterable[Iterable[float]] | np.ndarray) -> np.nda
     norms = np.linalg.norm(matrix, axis=1, keepdims=True)
     norms[norms == 0.0] = 1.0
     return matrix / norms
+
+
+def _resolve_api_key(api_key: str | None, api_key_env: str) -> str:
+    return api_key or os.getenv(api_key_env) or os.getenv("OPENAI_API_KEY") or "unused"

@@ -2,17 +2,23 @@
 
 from __future__ import annotations
 
+import os
 from abc import ABC, abstractmethod
 
-from config import DEFAULT_LLM_MODEL, DEFAULT_LLM_PROVIDER, DEFAULT_PROMPT_TEMPLATE, DEFAULT_TOP_K
+from config import (
+    DEFAULT_GENERATION_MODEL,
+    DEFAULT_GENERATION_PROVIDER,
+    DEFAULT_PROMPT_TEMPLATE,
+    DEFAULT_TOP_K,
+)
 from embeddings import EmbeddingModel
 from models import RagResult
 from prompts import render_prompt
 from vector_store import FaissVectorStore
 
 
-class LanguageModel(ABC):
-    """Interface for generation providers."""
+class GenerationModel(ABC):
+    """Interface for text generation providers."""
 
     model_name: str
 
@@ -21,18 +27,31 @@ class LanguageModel(ABC):
         """Generate an answer for a fully rendered prompt."""
 
 
-class OpenAILanguageModel(LanguageModel):
-    """OpenAI chat-completion language model."""
+class APIChatGenerationModel(GenerationModel):
+    """Chat generation through an API-compatible chat-completions endpoint."""
 
-    def __init__(self, model_name: str = DEFAULT_LLM_MODEL, temperature: float = 0.0) -> None:
+    def __init__(
+        self,
+        model_name: str,
+        temperature: float = 0.0,
+        base_url: str | None = None,
+        api_key: str | None = None,
+        api_key_env: str = "MODEL_API_KEY",
+    ) -> None:
         try:
             from openai import OpenAI
         except ImportError as exc:
-            raise ImportError("Install openai to use OpenAI generation.") from exc
+            raise ImportError("Install openai to use API-compatible generation.") from exc
 
+        if not model_name:
+            raise ValueError("model_name is required for API-compatible generation.")
+
+        resolved_api_key = _resolve_api_key(api_key=api_key, api_key_env=api_key_env)
         self.model_name = model_name
         self.temperature = temperature
-        self._client = OpenAI()
+        self.base_url = base_url
+        self.api_key_env = api_key_env
+        self._client = OpenAI(api_key=resolved_api_key, base_url=base_url)
 
     def generate(self, prompt: str) -> str:
         response = self._client.chat.completions.create(
@@ -44,7 +63,7 @@ class OpenAILanguageModel(LanguageModel):
         return (answer or "").strip()
 
 
-class TransformersLanguageModel(LanguageModel):
+class LocalTransformersGenerationModel(GenerationModel):
     """Local Hugging Face text-generation model."""
 
     def __init__(
@@ -82,7 +101,7 @@ class RagPipeline:
         self,
         vector_store: FaissVectorStore,
         embedding_model: EmbeddingModel,
-        language_model: LanguageModel,
+        generation_model: GenerationModel,
         prompt_template: str = DEFAULT_PROMPT_TEMPLATE,
         top_k: int = DEFAULT_TOP_K,
     ) -> None:
@@ -91,7 +110,7 @@ class RagPipeline:
 
         self.vector_store = vector_store
         self.embedding_model = embedding_model
-        self.language_model = language_model
+        self.generation_model = generation_model
         self.prompt_template = prompt_template
         self.top_k = top_k
 
@@ -103,23 +122,39 @@ class RagPipeline:
 
         sources = self.vector_store.search(query=query, embedding_model=self.embedding_model, top_k=self.top_k)
         prompt = render_prompt(query, sources, template_name=self.prompt_template)
-        answer = self.language_model.generate(prompt)
+        answer = self.generation_model.generate(prompt)
         return RagResult(answer=answer, sources=sources, prompt=prompt)
 
 
-def build_language_model(
-    provider: str = DEFAULT_LLM_PROVIDER,
+def build_generation_model(
+    provider: str = DEFAULT_GENERATION_PROVIDER,
     model_name: str | None = None,
     temperature: float = 0.0,
-) -> LanguageModel:
+    base_url: str | None = None,
+    api_key: str | None = None,
+    api_key_env: str = "MODEL_API_KEY",
+) -> GenerationModel:
     """Create a generation provider from CLI/config values."""
 
     provider_key = provider.strip().lower()
-    if provider_key == "openai":
-        return OpenAILanguageModel(model_name or DEFAULT_LLM_MODEL, temperature=temperature)
+    if provider_key in {"api", "api-compatible", "api_compatible", "openai-compatible", "openai_compatible", "openai"}:
+        resolved_model_name = model_name or DEFAULT_GENERATION_MODEL
+        if not resolved_model_name:
+            raise ValueError("A --generation-model is required for API-compatible generation.")
+        return APIChatGenerationModel(
+            model_name=resolved_model_name,
+            temperature=temperature,
+            base_url=base_url,
+            api_key=api_key,
+            api_key_env=api_key_env,
+        )
     if provider_key in {"transformers", "huggingface", "hf", "local"}:
         if not model_name:
             raise ValueError("A local transformers model_name is required for local generation.")
-        return TransformersLanguageModel(model_name=model_name, temperature=temperature)
+        return LocalTransformersGenerationModel(model_name=model_name, temperature=temperature)
 
-    raise ValueError(f"Unsupported LLM provider: {provider}")
+    raise ValueError(f"Unsupported generation provider: {provider}")
+
+
+def _resolve_api_key(api_key: str | None, api_key_env: str) -> str:
+    return api_key or os.getenv(api_key_env) or os.getenv("OPENAI_API_KEY") or "unused"

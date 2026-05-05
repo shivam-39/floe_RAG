@@ -11,15 +11,16 @@ from config import (
     DATA_DIR,
     DEFAULT_CHUNK_OVERLAP_TOKENS,
     DEFAULT_CHUNK_SIZE_TOKENS,
+    DEFAULT_EMBEDDING_PROVIDER,
     DEFAULT_INDEX_DIR,
-    DEFAULT_LLM_PROVIDER,
+    DEFAULT_GENERATION_PROVIDER,
     DEFAULT_PROMPT_TEMPLATE,
     DEFAULT_TOP_K,
 )
 from embeddings import build_embedding_model
 from ingestion import load_documents
 from prompts import PROMPT_TEMPLATES, format_source_list
-from rag_pipeline import RagPipeline, build_language_model
+from rag_pipeline import RagPipeline, build_generation_model
 from vector_store import FaissVectorStore
 
 
@@ -42,19 +43,43 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
     parser.add_argument(
         "--embedding-provider",
-        default="sentence-transformers",
-        help="Embedding provider: sentence-transformers or openai.",
+        default=DEFAULT_EMBEDDING_PROVIDER,
+        help="Embedding provider: sentence-transformers, api, or api-compatible.",
     )
     parser.add_argument("--embedding-model", default=None, help="Embedding model name override.")
     parser.add_argument("--embedding-device", default=None, help="Optional device for sentence-transformers.")
+    parser.add_argument("--embedding-base-url", default=None, help="Base URL for API-compatible embeddings.")
+    parser.add_argument("--embedding-api-key", default=None, help="API key for API-compatible embeddings.")
+    parser.add_argument(
+        "--embedding-api-key-env",
+        default="MODEL_API_KEY",
+        help="Environment variable that stores the embedding API key.",
+    )
     parser.add_argument(
         "--allow-embedding-mismatch",
         action="store_true",
         help="Allow querying an index with a different embedding model than the one used to build it.",
     )
 
-    parser.add_argument("--llm-provider", default=DEFAULT_LLM_PROVIDER, help="LLM provider: openai or local.")
-    parser.add_argument("--llm-model", default=None, help="LLM model name override.")
+    parser.add_argument(
+        "--generation-provider",
+        dest="generation_provider",
+        default=DEFAULT_GENERATION_PROVIDER,
+        help="Generation provider: api/api-compatible or local.",
+    )
+    parser.add_argument(
+        "--generation-model",
+        dest="generation_model",
+        default=None,
+        help="Generation model name.",
+    )
+    parser.add_argument("--generation-base-url", default=None, help="Base URL for API-compatible generation.")
+    parser.add_argument("--generation-api-key", default=None, help="API key for API-compatible generation.")
+    parser.add_argument(
+        "--generation-api-key-env",
+        default="MODEL_API_KEY",
+        help="Environment variable that stores the generation API key.",
+    )
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument(
         "--prompt-template",
@@ -83,6 +108,9 @@ def build_index(args: argparse.Namespace) -> FaissVectorStore:
         provider=args.embedding_provider,
         model_name=args.embedding_model,
         device=args.embedding_device,
+        base_url=args.embedding_base_url,
+        api_key=args.embedding_api_key,
+        api_key_env=args.embedding_api_key_env,
     )
     vector_store = FaissVectorStore.build(chunks, embedding_model)
     vector_store.save(args.index_dir)
@@ -96,19 +124,25 @@ def run_query(args: argparse.Namespace, vector_store: FaissVectorStore | None = 
         provider=args.embedding_provider,
         model_name=args.embedding_model,
         device=args.embedding_device,
+        base_url=args.embedding_base_url,
+        api_key=args.embedding_api_key,
+        api_key_env=args.embedding_api_key_env,
     )
     store = vector_store or FaissVectorStore.load(args.index_dir)
     _validate_embedding_model(store, embedding_model.model_name, args.allow_embedding_mismatch)
 
-    language_model = build_language_model(
-        provider=args.llm_provider,
-        model_name=args.llm_model,
+    generation_model = build_generation_model(
+        provider=args.generation_provider,
+        model_name=args.generation_model,
         temperature=args.temperature,
+        base_url=args.generation_base_url,
+        api_key=args.generation_api_key,
+        api_key_env=args.generation_api_key_env,
     )
     pipeline = RagPipeline(
         vector_store=store,
         embedding_model=embedding_model,
-        language_model=language_model,
+        generation_model=generation_model,
         prompt_template=args.prompt_template,
         top_k=args.top_k,
     )
