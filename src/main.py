@@ -73,7 +73,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Generation model name.",
     )
-    parser.add_argument("--generation-base-url", default=None, help="Base URL for API-compatible generation.")
+    parser.add_argument("--generation-base-url", default="https://openrouter.ai/api/v1", help="Base URL for API-compatible generation.")
     parser.add_argument("--generation-api-key", default=None, help="API key for API-compatible generation.")
     parser.add_argument(
         "--generation-api-key-env",
