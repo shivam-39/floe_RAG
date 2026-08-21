@@ -2,6 +2,8 @@
 
 Retrieval-Augmented Generation (RAG) for technical documents. It ingests PDFs, Markdown files, and Jupyter notebooks; chunks text with citation metadata; embeds chunks; stores vectors in FAISS; retrieves relevant context; and generates cited answers with a configurable LLM.
 
+The recorded benchmark results are available in [BENCHMARK_RESULTS.md](BENCHMARK_RESULTS.md).
+
 ## Architecture
 
 ```mermaid
@@ -37,12 +39,12 @@ requirements.txt      Python dependencies
 
 ## Setup
 
-Use the existing conda environment named `rag_env`.
+Create and activate a project-local virtual environment:
 
 ```bash
-conda create --name rag_env
-conda activate rag_env
-pip install -r requirements.txt
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
 ```
 
 For API-backed embeddings or generation, set the relevant API key if your endpoint requires one:
@@ -188,3 +190,30 @@ Two templates are available in `src/prompts.py`:
 - `citation`: citation-focused QA that asks the model to cite factual claims
 
 Swap templates with `--prompt-template basic` or by passing `prompt_template="basic"` to `RagPipeline`.
+
+## Retrieval Benchmark
+
+The repository includes a retrieval-only benchmark runner for the public BEIR SciFact dataset. It downloads SciFact automatically, builds a separate FAISS index, preserves BEIR document IDs through chunking, and reports document-level Precision@k, Recall@k, MRR, and nDCG@k.
+
+Install the project dependencies, then run:
+
+```bash
+chmod +x benchmark.sh
+./benchmark.sh
+```
+
+The benchmark command and its values are in `benchmark.sh`. Edit that command when changing benchmark settings.
+
+The recommended locations are:
+
+```text
+benchmark_data/scifact/       Downloaded dataset
+benchmark_index/scifact/      Benchmark FAISS index
+benchmark_results/scifact.json
+```
+
+Useful options include `--dataset-name`, `--dataset-url`, `--rebuild-index`, `--k-values 1,5,10`, `--chunk-size 400`, `--chunk-overlap 80`, and `--results-path path/to/results.json`. The dataset URL is only used when the dataset is not already present in `--dataset-dir`. The benchmark does not require an LLM API key because it measures retrieval independently from answer generation.
+
+The recorded benchmark results are available in [BENCHMARK_RESULTS.md](BENCHMARK_RESULTS.md).
+
+SciFact is part of BEIR. Check the dataset license and cite the BEIR paper when publishing results.

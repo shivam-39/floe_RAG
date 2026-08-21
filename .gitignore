@@ -13,5 +13,8 @@ data/processed/
 *.faiss
 *.index
 index_store/
+benchmark_data/
+benchmark_index/
+benchmark_results/
 
 .DS_Store
