@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from typing import Iterable
 
@@ -49,6 +50,35 @@ def load_documents(paths: str | Path | Iterable[str | Path], recursive: bool = T
     for path in document_paths:
         documents.extend(load_document(path))
     return documents
+
+
+def move_indexed_files(
+    paths: Iterable[str | Path],
+    source_root: str | Path,
+    processed_root: str | Path,
+) -> list[Path]:
+    """Move indexed source files to a processed directory, preserving their layout."""
+
+    source_base = Path(source_root).expanduser().resolve()
+    processed_base = Path(processed_root).expanduser().resolve()
+    if source_base == processed_base or processed_base.is_relative_to(source_base):
+        raise ValueError("processed_root must be outside source_root.")
+
+    source_files = sorted({Path(path).expanduser().resolve() for path in paths})
+    destinations = [
+        processed_base / source_file.relative_to(source_base)
+        for source_file in source_files
+    ]
+    for source_file, destination in zip(source_files, destinations, strict=True):
+        if not source_file.is_file():
+            raise FileNotFoundError(f"Indexed source file does not exist: {source_file}")
+        if destination.exists():
+            raise FileExistsError(f"Processed destination already exists: {destination}")
+
+    for source_file, destination in zip(source_files, destinations, strict=True):
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(source_file), str(destination))
+    return destinations
 
 
 def load_document(path: str | Path) -> list[Document]:

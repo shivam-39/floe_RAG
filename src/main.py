@@ -9,6 +9,7 @@ from pathlib import Path
 from chunking import chunk_documents
 from config import (
     DATA_DIR,
+    DATA_PROCESSED_DIR,
     DEFAULT_CHUNK_OVERLAP_TOKENS,
     DEFAULT_CHUNK_SIZE_TOKENS,
     DEFAULT_EMBEDDING_PROVIDER,
@@ -18,7 +19,7 @@ from config import (
     DEFAULT_TOP_K,
 )
 from embeddings import build_embedding_model
-from ingestion import load_documents
+from ingestion import load_documents, move_indexed_files
 from prompts import PROMPT_TEMPLATES, format_source_list
 from rag_pipeline import RagPipeline, build_generation_model
 from vector_store import FaissVectorStore
@@ -29,6 +30,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--index", action="store_true", help="Build and persist a FAISS vector index.")
     parser.add_argument("--query", type=str, help="Question to answer using the vector index.")
     parser.add_argument("--data-dir", type=Path, default=DATA_DIR, help="Document file or directory to index.")
+    parser.add_argument(
+        "--processed-data-dir",
+        type=Path,
+        default=DATA_PROCESSED_DIR,
+        help="Directory where successfully indexed source files are moved.",
+    )
     parser.add_argument("--index-dir", type=Path, default=DEFAULT_INDEX_DIR, help="Directory for FAISS index files.")
     parser.add_argument(
         "--recursive",
@@ -114,8 +121,19 @@ def build_index(args: argparse.Namespace) -> FaissVectorStore:
     )
     vector_store = FaissVectorStore.build(chunks, embedding_model)
     vector_store.save(args.index_dir)
+    indexed_source_paths = {
+        chunk.metadata["source"]
+        for chunk in chunks
+        if isinstance(chunk.metadata.get("source"), str)
+    }
+    moved_files = move_indexed_files(
+        indexed_source_paths,
+        source_root=args.data_dir if args.data_dir.is_dir() else args.data_dir.parent,
+        processed_root=args.processed_data_dir,
+    )
     print(f"Indexed {len(documents)} document records into {len(chunks)} chunks.")
     print(f"Saved vector store to {args.index_dir}")
+    print(f"Moved {len(moved_files)} indexed source files to {args.processed_data_dir}")
     return vector_store
 
 

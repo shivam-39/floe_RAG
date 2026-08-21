@@ -23,7 +23,8 @@ flowchart LR
 ## Project Structure
 
 ```text
-data/                 Raw technical documents
+data/                 Documents waiting to be indexed
+data_processed/       Documents already indexed by the CLI
 notebooks/            Experiments and evaluation notebooks
 src/
   ingestion.py        PDF, Markdown, and notebook loading
