@@ -8,6 +8,7 @@ import math
 import urllib.request
 import zipfile
 from collections import defaultdict
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -194,6 +195,9 @@ def main(argv: list[str] | None = None) -> int:
         **evaluation,
     }
     results_path = args.results_path.expanduser().resolve()
+    if args.results_path == DEFAULT_RESULTS_PATH:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        results_path = results_path.with_name(f"{DATASET_NAME}_{timestamp}.json")
     results_path.parent.mkdir(parents=True, exist_ok=True)
     results_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     print(json.dumps(payload["metrics"], indent=2))
