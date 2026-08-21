@@ -34,6 +34,7 @@ src/
   prompts.py          Basic QA and citation-focused prompt templates
   rag_pipeline.py     End-to-end retrieval and generation pipeline
   evaluation.py       precision@k, recall@k, and qualitative review helpers
+  benachmark.py       Benchmarking for a given dataset
   main.py             CLI for indexing and querying
 requirements.txt      Python dependencies
 ```
@@ -54,8 +55,6 @@ For API-backed embeddings or generation, set the relevant API key if your endpoi
 export MODEL_API_KEY="your-api-key"
 ```
 
-The default embedding provider is local `sentence-transformers/all-MiniLM-L6-v2`. Generation is provider-neutral: use `--generation-provider api` for chat-completions-compatible APIs, or `--generation-provider local` for Hugging Face text-generation models.
-
 ## Usage
 
 Put source documents under `data/`, then build a FAISS index:
@@ -70,6 +69,14 @@ Query the index:
 python src/main.py --query "How does the system normalize embeddings?" --index-dir index_store
 ```
 
+Use the citation-focused prompt, which is the default:
+
+```bash
+python src/main.py \
+  --query "Where is FAISS used?" \
+  --prompt-template citation
+```
+
 Build and query in one run:
 
 ```bash
@@ -77,6 +84,7 @@ python src/main.py \
   --index \
   --data-dir data \
   --query "What are the main components of the pipeline?"
+  --prompt-template citation
 ```
 
 Use API-compatible embeddings:
@@ -117,41 +125,41 @@ python src/main.py \
   --generation-model google/flan-t5-base
 ```
 
-Use the citation-focused prompt, which is the default:
+## Retrieval Benchmark
+
+The repository includes a retrieval-only benchmark runner for the public BEIR SciFact dataset. It downloads SciFact automatically, builds a separate FAISS index, preserves BEIR document IDs through chunking, and reports document-level Precision@k, Recall@k, MRR, and nDCG@k.
+
+Install the project dependencies, then run:
 
 ```bash
-python src/main.py \
-  --query "Where is FAISS used?" \
-  --prompt-template citation
+chmod +x benchmark.sh
+./benchmark.sh
 ```
 
-## Pipeline Notes
+The benchmark command and its values are in `benchmark.sh`. Edit that command when changing benchmark settings.
 
-Ingestion returns `Document` records with provenance such as filename, extension, page number for PDFs, and notebook cell metadata. Chunking creates overlapping fixed-size token windows and carries that metadata into each `Chunk`.
-
-Embeddings are L2-normalized before storage. The FAISS store uses `IndexFlatIP`, so normalized inner product search behaves as cosine similarity. The persisted vector store contains:
+The recommended locations are:
 
 ```text
-index_store/
-  index.faiss
-  chunks.json
-  manifest.json
+benchmark_data/scifact/       Downloaded dataset
+benchmark_index/scifact/      Benchmark FAISS index
+benchmark_results/scifact.json
 ```
 
-At query time, the pipeline embeds the query with the same embedding model, retrieves top-k chunks, renders a prompt, calls the selected LLM, and returns a `RagResult` with:
+Useful options include `--dataset-name`, `--dataset-url`, `--rebuild-index`, `--k-values 1,5,10`, `--chunk-size 400`, `--chunk-overlap 80`, and `--results-path path/to/results.json`. The dataset URL is only used when the dataset is not already present in `--dataset-dir`. The benchmark does not require an LLM API key because it measures retrieval independently from answer generation.
 
-```text
-answer
-sources
-prompt
-```
+The recorded benchmark results are available in [BENCHMARK_RESULTS.md](BENCHMARK_RESULTS.md).
 
-Source labels are formatted as:
+SciFact is part of BEIR. Check the dataset license and cite the BEIR paper when publishing results.
 
-```text
-[Source: filename, page X]
-[Source: notebook.ipynb, cell Y]
-```
+## Prompt Tuning
+
+Two templates are available in `src/prompts.py`:
+
+- `basic`: concise QA over retrieved context
+- `citation`: citation-focused QA that asks the model to cite factual claims
+
+Swap templates with `--prompt-template basic` or by passing `prompt_template="basic"` to `RagPipeline`.
 
 ## Evaluation
 
@@ -182,39 +190,3 @@ Available metrics:
 - `recall_at_k`
 - mean precision and recall across an evaluation set
 - basic qualitative records that track answer text, retrieved source labels, citation markers, and reviewer notes
-
-## Prompt Tuning
-
-Two templates are available in `src/prompts.py`:
-
-- `basic`: concise QA over retrieved context
-- `citation`: citation-focused QA that asks the model to cite factual claims
-
-Swap templates with `--prompt-template basic` or by passing `prompt_template="basic"` to `RagPipeline`.
-
-## Retrieval Benchmark
-
-The repository includes a retrieval-only benchmark runner for the public BEIR SciFact dataset. It downloads SciFact automatically, builds a separate FAISS index, preserves BEIR document IDs through chunking, and reports document-level Precision@k, Recall@k, MRR, and nDCG@k.
-
-Install the project dependencies, then run:
-
-```bash
-chmod +x benchmark.sh
-./benchmark.sh
-```
-
-The benchmark command and its values are in `benchmark.sh`. Edit that command when changing benchmark settings.
-
-The recommended locations are:
-
-```text
-benchmark_data/scifact/       Downloaded dataset
-benchmark_index/scifact/      Benchmark FAISS index
-benchmark_results/scifact.json
-```
-
-Useful options include `--dataset-name`, `--dataset-url`, `--rebuild-index`, `--k-values 1,5,10`, `--chunk-size 400`, `--chunk-overlap 80`, and `--results-path path/to/results.json`. The dataset URL is only used when the dataset is not already present in `--dataset-dir`. The benchmark does not require an LLM API key because it measures retrieval independently from answer generation.
-
-The recorded benchmark results are available in [BENCHMARK_RESULTS.md](BENCHMARK_RESULTS.md).
-
-SciFact is part of BEIR. Check the dataset license and cite the BEIR paper when publishing results.
