@@ -13,11 +13,6 @@ from pathlib import Path
 from typing import Any
 
 from chunking import chunk_documents
-from config import (
-    DEFAULT_CHUNK_OVERLAP_TOKENS,
-    DEFAULT_CHUNK_SIZE_TOKENS,
-    DEFAULT_EMBEDDING_MODEL,
-)
 from embeddings import build_embedding_model
 from models import Document, RetrievedChunk
 from vector_store import FaissVectorStore
@@ -31,41 +26,46 @@ DEFAULT_RESULTS_PATH = Path("benchmark_results") / f"{DATASET_NAME}.json"
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Benchmark dense retrieval with BEIR SciFact.")
-    parser.add_argument("--dataset-dir", type=Path, default=DEFAULT_DATASET_DIR)
-    parser.add_argument("--index-dir", type=Path, default=DEFAULT_INDEX_DIR)
-    parser.add_argument("--results-path", type=Path, default=DEFAULT_RESULTS_PATH)
-    parser.add_argument("--split", default="test")
-    parser.add_argument("--embedding-model", default=DEFAULT_EMBEDDING_MODEL)
-    parser.add_argument("--embedding-device", default=None)
-    parser.add_argument("--chunk-size", type=int, default=DEFAULT_CHUNK_SIZE_TOKENS)
-    parser.add_argument("--chunk-overlap", type=int, default=DEFAULT_CHUNK_OVERLAP_TOKENS)
+    parser.add_argument("--dataset-name", default=DATASET_NAME, help="BEIR dataset name.")
+    parser.add_argument("--dataset-url", default=DATASET_URL, help="Dataset ZIP URL used when local files are unavailable.")
+    parser.add_argument("--dataset-dir", type=Path, default=DEFAULT_DATASET_DIR, help="Dataset directory.")
+    parser.add_argument("--index-dir", type=Path, default=DEFAULT_INDEX_DIR, help="FAISS index directory.")
+    parser.add_argument("--results-path", type=Path, default=DEFAULT_RESULTS_PATH, help="Benchmark results path.")
+    parser.add_argument("--split", default="test", help="BEIR split to evaluate.")
+    parser.add_argument("--embedding-model", default="sentence-transformers/all-MiniLM-L6-v2", help="Embedding model name.")
+    parser.add_argument("--embedding-device", default=None, help="Optional embedding device.")
+    parser.add_argument("--chunk-size", type=int, default=400, help="Chunk size in tokens.")
+    parser.add_argument("--chunk-overlap", type=int, default=80, help="Chunk overlap in tokens.")
     parser.add_argument("--k-values", default="1,5,10", help="Comma-separated cutoff values, for example 1,5,10.")
-    parser.add_argument("--rebuild-index", action="store_true")
+    parser.add_argument("--rebuild-index", action="store_true", help="Rebuild the persisted index.")
     return parser.parse_args(argv)
 
 
-def ensure_dataset(dataset_dir: Path) -> Path:
+def ensure_dataset(dataset_dir: Path, dataset_name: str, dataset_url: str) -> Path:
     """Download and extract SciFact when the expected files are unavailable."""
 
     root = dataset_dir.expanduser().resolve()
-    if _find_dataset_root(root) is not None:
-        return _find_dataset_root(root)  # type: ignore[return-value]
+    dataset_root = _find_dataset_root(root, dataset_name)
+    if dataset_root is not None:
+        return dataset_root
 
     root.mkdir(parents=True, exist_ok=True)
-    archive_path = root / "scifact.zip"
-    print(f"Downloading {DATASET_NAME} to {archive_path}")
-    urllib.request.urlretrieve(DATASET_URL, archive_path)
+    archive_path = root / f"{dataset_name}.zip"
+    print(f"Downloading {dataset_name} to {archive_path}")
+    urllib.request.urlretrieve(dataset_url, archive_path)
     with zipfile.ZipFile(archive_path) as archive:
         archive.extractall(root)
     archive_path.unlink()
 
-    dataset_root = _find_dataset_root(root)
+    dataset_root = _find_dataset_root(root, dataset_name)
     if dataset_root is None:
-        raise FileNotFoundError(f"SciFact files were not found after extracting {root}")
+        raise FileNotFoundError(f"{dataset_name} files were not found after extracting {root}")
     return dataset_root
 
 
-def load_beir_dataset(dataset_root: Path, split: str) -> tuple[list[Document], dict[str, str], dict[str, set[str]]]:
+def load_beir_dataset(
+    dataset_root: Path, split: str, dataset_name: str = DATASET_NAME
+) -> tuple[list[Document], dict[str, str], dict[str, set[str]]]:
     """Load BEIR corpus, queries, and qrels into repository-compatible structures."""
 
     corpus_path = dataset_root / "corpus.jsonl"
@@ -87,7 +87,7 @@ def load_beir_dataset(dataset_root: Path, split: str) -> tuple[list[Document], d
                 documents.append(
                     Document(
                         text=combined_text,
-                        metadata={"source": f"beir:{DATASET_NAME}", "beir_document_id": document_id},
+                        metadata={"source": f"beir:{dataset_name}", "beir_document_id": document_id},
                     )
                 )
 
@@ -156,6 +156,7 @@ def build_or_load_index(
     chunk_size: int,
     chunk_overlap: int,
     rebuild: bool,
+    dataset_name: str,
 ) -> FaissVectorStore:
     """Build a benchmark index once, or load the persisted equivalent."""
 
@@ -163,7 +164,7 @@ def build_or_load_index(
     if index_path.exists() and not rebuild:
         return FaissVectorStore.load(index_dir)
 
-    documents, _, _ = load_beir_dataset(dataset_root, split="test")
+    documents, _, _ = load_beir_dataset(dataset_root, split="test", dataset_name=dataset_name)
     chunks = chunk_documents(documents, chunk_size_tokens=chunk_size, chunk_overlap_tokens=chunk_overlap)
     store = FaissVectorStore.build(chunks, embedding_model)
     store.save(index_dir)
@@ -173,7 +174,7 @@ def build_or_load_index(
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     k_values = _parse_k_values(args.k_values)
-    dataset_root = ensure_dataset(args.dataset_dir)
+    dataset_root = ensure_dataset(args.dataset_dir, args.dataset_name, args.dataset_url)
     embedding_model = build_embedding_model(model_name=args.embedding_model, device=args.embedding_device)
     vector_store = build_or_load_index(
         dataset_root,
@@ -182,11 +183,12 @@ def main(argv: list[str] | None = None) -> int:
         args.chunk_size,
         args.chunk_overlap,
         args.rebuild_index,
+        args.dataset_name,
     )
-    _, queries, relevant_documents = load_beir_dataset(dataset_root, args.split)
+    _, queries, relevant_documents = load_beir_dataset(dataset_root, args.split, args.dataset_name)
     evaluation = evaluate_retrieval(vector_store, embedding_model, queries, relevant_documents, k_values)
     payload = {
-        "dataset": DATASET_NAME,
+        "dataset": args.dataset_name,
         "split": args.split,
         "embedding_model": args.embedding_model,
         "chunk_size": args.chunk_size,
@@ -195,9 +197,8 @@ def main(argv: list[str] | None = None) -> int:
         **evaluation,
     }
     results_path = args.results_path.expanduser().resolve()
-    if args.results_path == DEFAULT_RESULTS_PATH:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        results_path = results_path.with_name(f"{DATASET_NAME}_{timestamp}.json")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    results_path = results_path.with_name(f"{results_path.stem}_{timestamp}{results_path.suffix}")
     results_path.parent.mkdir(parents=True, exist_ok=True)
     results_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     print(json.dumps(payload["metrics"], indent=2))
@@ -205,8 +206,8 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def _find_dataset_root(root: Path) -> Path | None:
-    candidates = [root, root / DATASET_NAME]
+def _find_dataset_root(root: Path, dataset_name: str) -> Path | None:
+    candidates = [root, root / dataset_name]
     return next((candidate for candidate in candidates if (candidate / "corpus.jsonl").exists()), None)
 
 

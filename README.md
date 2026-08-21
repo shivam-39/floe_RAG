@@ -198,10 +198,13 @@ The repository includes a retrieval-only benchmark runner for the public BEIR Sc
 Install the project dependencies, then run:
 
 ```bash
-python src/benchmark.py
+chmod +x benchmark.sh
+./benchmark.sh
 ```
 
-The default locations are:
+The benchmark command and its values are in `benchmark.sh`. Edit that command when changing benchmark settings.
+
+The recommended locations are:
 
 ```text
 benchmark_data/scifact/       Downloaded dataset
@@ -209,7 +212,7 @@ benchmark_index/scifact/      Benchmark FAISS index
 benchmark_results/scifact.json
 ```
 
-Useful options include `--rebuild-index`, `--k-values 1,5,10`, `--chunk-size 400`, `--chunk-overlap 80`, and `--results-path path/to/results.json`. The benchmark does not require an LLM API key because it measures retrieval independently from answer generation.
+Useful options include `--dataset-name`, `--dataset-url`, `--rebuild-index`, `--k-values 1,5,10`, `--chunk-size 400`, `--chunk-overlap 80`, and `--results-path path/to/results.json`. The dataset URL is only used when the dataset is not already present in `--dataset-dir`. The benchmark does not require an LLM API key because it measures retrieval independently from answer generation.
 
 The recorded benchmark results are available in [BENCHMARK_RESULTS.md](BENCHMARK_RESULTS.md).
 
