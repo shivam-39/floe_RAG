@@ -8,8 +8,8 @@ __pycache__/
 .venv/
 venv/
 
-data/raw/
-data/processed/
+data/
+data_processed/
 *.faiss
 *.index
 index_store/
